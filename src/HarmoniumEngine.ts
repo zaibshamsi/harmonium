@@ -81,10 +81,17 @@ export class HarmoniumEngine {
     if (!this.audioCtx || this.harmoniumBuffer) return;
     try {
       const response = await fetch(this.PRIMARY_WAV_URL);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+      }
+      const contentType = response.headers.get("content-type");
+      if (contentType && !contentType.includes("audio") && !contentType.includes("application/octet-stream")) {
+        console.warn(`Unexpected content type for audio: ${contentType}`);
+      }
       const arrayBuffer = await response.arrayBuffer();
       this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
     } catch (e) {
-      console.error("Failed to load harmonium sample, using fallback", e);
+      console.error(`Failed to load harmonium sample (${this.PRIMARY_WAV_URL}):`, e);
       this.harmoniumBuffer = this.createFallbackBuffer();
     }
   }
@@ -93,13 +100,16 @@ export class HarmoniumEngine {
     if (!this.audioCtx || this.reverbBuffer) return;
     try {
       const response = await fetch(this.REVERB_IR_URL);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+      }
       const arrayBuffer = await response.arrayBuffer();
       this.reverbBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       if (this.reverbNode) {
         this.reverbNode.buffer = this.reverbBuffer;
       }
     } catch (e) {
-      console.error("Failed to load reverb IR", e);
+      console.error(`Failed to load reverb IR (${this.REVERB_IR_URL}):`, e);
     }
   }
 
