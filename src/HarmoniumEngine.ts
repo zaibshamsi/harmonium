@@ -32,8 +32,8 @@ export class HarmoniumEngine {
   private octaveMap: number[] = [-36, -24, -12, 0, 12, 24, 36];
   private keyMap: number[] = new Array(128).fill(0);
   
-  private readonly PRIMARY_WAV_URL = "/harmonium-kannan-orig.wav";
-  private readonly REVERB_IR_URL = "/reverb.wav";
+  private readonly PRIMARY_WAV_URL = import.meta.env.VITE_HARMONIUM_WAV_URL || "/harmonium-kannan-orig.wav";
+  private readonly REVERB_IR_URL = import.meta.env.VITE_REVERB_WAV_URL || "/reverb.wav";
   private readonly ROOT_KEY = 62; // D4
 
   constructor() {
@@ -84,14 +84,25 @@ export class HarmoniumEngine {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
-      const contentType = response.headers.get("content-type");
-      if (contentType && !contentType.includes("audio") && !contentType.includes("application/octet-stream")) {
-        console.warn(`Unexpected content type for audio: ${contentType}`);
-      }
+      
       const arrayBuffer = await response.arrayBuffer();
+      
+      // Check for Git LFS pointer (starts with "version https://git-lfs")
+      const firstBytes = new Uint8Array(arrayBuffer.slice(0, 100));
+      const textPreview = new TextDecoder().decode(firstBytes);
+      if (textPreview.includes("version https://git-lfs")) {
+        throw new Error("LFS_POINTER_DETECTED: The audio file is a Git LFS pointer, not the actual audio data. Vercel cannot decode this.");
+      }
+      if (textPreview.trim().startsWith("<!DOCTYPE") || textPreview.trim().startsWith("<html")) {
+        throw new Error("HTML_DETECTED: Received an HTML page instead of audio. This is likely a 404 error or a redirect.");
+      }
+
       this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
     } catch (e) {
-      console.error(`Failed to load harmonium sample (${this.PRIMARY_WAV_URL}):`, e);
+      console.error(`CRITICAL AUDIO ERROR (${this.PRIMARY_WAV_URL}):`, e);
+      if (e instanceof Error && e.message.includes("LFS_POINTER_DETECTED")) {
+        console.error("FIX: You must 'un-track' these files from Git LFS and re-add them as normal files in your repository.");
+      }
       this.harmoniumBuffer = this.createFallbackBuffer();
     }
   }
