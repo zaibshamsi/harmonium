@@ -33,15 +33,11 @@ export class HarmoniumEngine {
   private keyMap: number[] = new Array(128).fill(0);
   
   private getPrimaryUrl(): string {
-    const envUrl = import.meta.env.VITE_HARMONIUM_WAV_URL;
-    console.log(`[AudioEngine] VITE_HARMONIUM_WAV_URL detected: ${envUrl ? 'YES' : 'NO (Using local fallback)'}`);
-    return envUrl || "/harmonium-kannan-orig.wav";
+    return "https://rdxjrsp5eejqdkga.public.blob.vercel-storage.com/harmonium-kannan-orig.wav";
   }
 
   private getReverbUrl(): string {
-    const envUrl = import.meta.env.VITE_REVERB_WAV_URL;
-    console.log(`[AudioEngine] VITE_REVERB_WAV_URL detected: ${envUrl ? 'YES' : 'NO (Using local fallback)'}`);
-    return envUrl || "/reverb.wav";
+    return "https://rdxjrsp5eejqdkga.public.blob.vercel-storage.com/reverb.wav";
   }
 
   private readonly ROOT_KEY = 62; // D4
@@ -103,10 +99,18 @@ export class HarmoniumEngine {
       console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for harmonium sample.`);
 
       const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
-      console.log(`[AudioEngine] File header magic: "${header}"`);
+      const format = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(8, 12)));
+      console.log(`[AudioEngine] File header magic: "${header}", format: "${format}"`);
 
-      if (header !== "RIFF") {
-        throw new Error(`INVALID_FORMAT: Expected RIFF header, got "${header}"`);
+      if (header !== "RIFF" || format !== "WAVE") {
+        const textPreview = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 200)));
+        console.warn(`[AudioEngine] Invalid WAV header or format. Header: "${header}", Format: "${format}"`);
+        console.warn(`[AudioEngine] Content preview: ${textPreview}`);
+        
+        if (textPreview.includes("version https://git-lfs")) {
+          throw new Error("LFS_POINTER_DETECTED: The file is still a Git LFS pointer.");
+        }
+        throw new Error(`INVALID_FORMAT: Expected RIFF/WAVE, got "${header}/${format}"`);
       }
 
       this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
