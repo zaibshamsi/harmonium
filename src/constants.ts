@@ -11,8 +11,8 @@ export interface NoteInfo {
   key?: string;
 }
 
-export const WHITE_KEYS_MAPPING = ["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'"];
-export const BLACK_KEYS_MAPPING = ["w", "e", "t", "y", "u", "o", "p"];
+export const WHITE_KEYS_MAPPING = ["`", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\\"];
+export const BLACK_KEYS_MAPPING = ["1", "2", "4", "5", "7", "8", "9", "-", "="];
 
 export const SARGAM_NAMES = ["Sa", "re", "Re", "ga", "Ga", "Ma", "ma", "Pa", "dha", "Dha", "ni", "Ni"];
 

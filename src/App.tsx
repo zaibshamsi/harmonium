@@ -30,6 +30,19 @@ export default function App() {
   const [userNotes, setUserNotes] = useState('');
   const keyboard = useMemo(() => generateKeyboard(START_MIDI, KEY_COUNT), []);
 
+  const activeSargamLetters = useMemo(() => {
+    const letters = new Set<string>();
+    state.activeMidi.forEach(midi => {
+      const info = keyboard.find(k => k.midi === midi);
+      if (info) {
+        // Map "Sa" -> "S", "Re" -> "R", etc.
+        const firstLetter = info.sargam.charAt(0).toUpperCase();
+        letters.add(firstLetter);
+      }
+    });
+    return letters;
+  }, [state.activeMidi, keyboard]);
+
   useEffect(() => {
     const unsubscribe = model.subscribe(setState);
     
@@ -364,23 +377,50 @@ export default function App() {
 
           {/* Notes Playground */}
           <div className="lg:col-span-2 h-64 bg-zinc-900/40 backdrop-blur-md rounded-[3rem] border border-white/5 flex flex-col relative overflow-hidden group">
-            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500 z-10">
+            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500 z-20">
               <Edit3 size={14} className="text-orange-500" />
               <span className="text-[10px] font-black uppercase tracking-widest">Notes Playground</span>
             </div>
             
-            <div className="absolute top-6 right-8 flex items-center gap-2 text-zinc-600 z-10">
+            <div className="absolute top-6 right-8 flex items-center gap-2 text-zinc-600 z-20">
               <FileText size={12} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Paste your composition here</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest">Glow enabled</span>
             </div>
 
-            <textarea
-              value={userNotes}
-              onChange={(e) => setUserNotes(e.target.value)}
-              placeholder="Example: S R G M P D N S'..."
-              className="w-full h-full bg-transparent p-12 pt-16 text-xl md:text-2xl font-serif italic text-zinc-300 placeholder:text-zinc-800 outline-none resize-none selection:bg-orange-500/20 scrollbar-hide"
-              spellCheck={false}
-            />
+            <div className="relative flex-1 overflow-hidden">
+              {/* Rendering Layer (Glow) */}
+              <div 
+                className="absolute inset-0 p-12 pt-16 text-xl md:text-2xl font-serif italic pointer-events-none whitespace-pre-wrap break-words leading-relaxed overflow-y-auto scrollbar-hide"
+                aria-hidden="true"
+              >
+                {userNotes.split('').map((char, i) => {
+                  const isActive = activeSargamLetters.has(char.toUpperCase());
+                  return (
+                    <span 
+                      key={i} 
+                      className={`transition-all duration-75 ${
+                        isActive 
+                        ? 'text-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,1)] scale-110 inline-block font-black' 
+                        : 'text-zinc-400'
+                      }`}
+                    >
+                      {char}
+                    </span>
+                  );
+                })}
+                {userNotes.length === 0 && (
+                  <span className="text-zinc-800">Example: S R G M P D N S'...</span>
+                )}
+              </div>
+
+              {/* Input Layer (Transparent) */}
+              <textarea
+                value={userNotes}
+                onChange={(e) => setUserNotes(e.target.value)}
+                className="absolute inset-0 w-full h-full bg-transparent p-12 pt-16 text-xl md:text-2xl font-serif italic text-transparent caret-orange-500 outline-none resize-none selection:bg-orange-500/20 scrollbar-hide z-10 leading-relaxed border-none focus:ring-0"
+                spellCheck={false}
+              />
+            </div>
             
             {/* Decorative Grid */}
             <div className="absolute inset-0 opacity-[0.02] pointer-events-none">
