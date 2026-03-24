@@ -9,7 +9,7 @@ import { HarmoniumModel, HarmoniumState } from './HarmoniumModel';
 import { HarmoniumController } from './HarmoniumController';
 import { generateKeyboard } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
-import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink } from 'lucide-react';
+import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink, Edit3, FileText } from 'lucide-react';
 
 const START_MIDI = 48;
 const KEY_COUNT = 37;
@@ -27,6 +27,7 @@ export default function App() {
   const [controller] = useState(() => new HarmoniumController(model, engine));
   
   const [state, setState] = useState<HarmoniumState>(model.getState());
+  const [userNotes, setUserNotes] = useState('');
   const keyboard = useMemo(() => generateKeyboard(START_MIDI, KEY_COUNT), []);
 
   useEffect(() => {
@@ -308,58 +309,88 @@ export default function App() {
           </div>
         </div>
 
-        {/* Sargam Display */}
-        <div className="h-40 bg-zinc-900/60 backdrop-blur-md rounded-[3rem] border border-white/5 flex items-center justify-center relative overflow-hidden shadow-inner">
-          {/* Bellows Animation Background */}
-          <motion.div 
-            className="absolute inset-0 bg-orange-500/5 pointer-events-none"
-            animate={{ 
-              opacity: state.activeMidi.size > 0 ? [0.05, 0.1, 0.05] : 0.05,
-              scale: state.activeMidi.size > 0 ? [1, 1.02, 1] : 1
-            }}
-            transition={{ duration: 0.5, repeat: Infinity }}
-          />
-          <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
-            <div className="grid grid-cols-24 h-full">
-              {Array.from({length: 48}).map((_, i) => (
-                <div key={i} className="border-r border-white h-full" />
-              ))}
+        {/* Sargam & Notes Playground */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Sargam Display (Real-time) */}
+          <div className="lg:col-span-1 h-64 bg-zinc-900/60 backdrop-blur-md rounded-[3rem] border border-white/5 flex flex-col items-center justify-center relative overflow-hidden shadow-inner group">
+            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500">
+              <Activity size={14} className="text-orange-500" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Live Sargam</span>
+            </div>
+            
+            <motion.div 
+              className="absolute inset-0 bg-orange-500/5 pointer-events-none"
+              animate={{ 
+                opacity: state.activeMidi.size > 0 ? [0.05, 0.1, 0.05] : 0.05,
+              }}
+              transition={{ duration: 0.5, repeat: Infinity }}
+            />
+
+            <AnimatePresence mode="popLayout">
+              {state.activeMidi.size > 0 ? (
+                <div className="flex flex-wrap justify-center gap-6 px-6">
+                  {Array.from(state.activeMidi).map(midi => {
+                    const info = keyboard.find(k => k.midi === midi);
+                    return (
+                      <motion.div
+                        key={midi}
+                        initial={{ scale: 0.5, opacity: 0, filter: 'blur(10px)' }}
+                        animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                        exit={{ scale: 1.5, opacity: 0, filter: 'blur(20px)' }}
+                        className="flex flex-col items-center"
+                      >
+                        <span className="text-6xl font-serif italic text-white font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">{info?.sargam}</span>
+                        <span className="text-[10px] uppercase tracking-[0.4em] text-orange-500 font-black mt-2">{info?.name}</span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-zinc-700 flex flex-col items-center gap-4"
+                >
+                  <div className="flex gap-2">
+                    {['S', 'R', 'G', 'M', 'P', 'D', 'N'].map(s => (
+                      <span key={s} className="text-2xl font-serif italic opacity-10">{s}</span>
+                    ))}
+                  </div>
+                  <span className="text-[9px] uppercase tracking-[0.5em] font-black opacity-40">Play keys to see sargam</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Notes Playground */}
+          <div className="lg:col-span-2 h-64 bg-zinc-900/40 backdrop-blur-md rounded-[3rem] border border-white/5 flex flex-col relative overflow-hidden group">
+            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500 z-10">
+              <Edit3 size={14} className="text-orange-500" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Notes Playground</span>
+            </div>
+            
+            <div className="absolute top-6 right-8 flex items-center gap-2 text-zinc-600 z-10">
+              <FileText size={12} />
+              <span className="text-[9px] font-bold uppercase tracking-widest">Paste your composition here</span>
+            </div>
+
+            <textarea
+              value={userNotes}
+              onChange={(e) => setUserNotes(e.target.value)}
+              placeholder="Example: S R G M P D N S'..."
+              className="w-full h-full bg-transparent p-12 pt-16 text-xl md:text-2xl font-serif italic text-zinc-300 placeholder:text-zinc-800 outline-none resize-none selection:bg-orange-500/20 scrollbar-hide"
+              spellCheck={false}
+            />
+            
+            {/* Decorative Grid */}
+            <div className="absolute inset-0 opacity-[0.02] pointer-events-none">
+              <div className="grid grid-cols-12 h-full">
+                {Array.from({length: 12}).map((_, i) => (
+                  <div key={i} className="border-r border-white h-full" />
+                ))}
+              </div>
             </div>
           </div>
-          <AnimatePresence mode="popLayout">
-            {state.activeMidi.size > 0 ? (
-              <div className="flex gap-8">
-                {Array.from(state.activeMidi).map(midi => {
-                  const info = keyboard.find(k => k.midi === midi);
-                  return (
-                    <motion.div
-                      key={midi}
-                      initial={{ scale: 0.5, opacity: 0, filter: 'blur(10px)' }}
-                      animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                      exit={{ scale: 1.5, opacity: 0, filter: 'blur(20px)' }}
-                      className="flex flex-col items-center"
-                    >
-                      <span className="text-6xl font-serif italic text-white font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">{info?.sargam}</span>
-                      <span className="text-xs uppercase tracking-[0.4em] text-orange-500 font-black mt-2">{info?.name}</span>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-zinc-700 flex flex-col items-center gap-4"
-              >
-                <div className="flex gap-2">
-                  {['S', 'R', 'G', 'M', 'P', 'D', 'N'].map(s => (
-                    <span key={s} className="text-2xl font-serif italic opacity-20">{s}</span>
-                  ))}
-                </div>
-                <span className="text-[10px] uppercase tracking-[0.5em] font-black">Waiting for input</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {/* Visual Keyboard */}
