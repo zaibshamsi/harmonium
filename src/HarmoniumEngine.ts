@@ -80,29 +80,36 @@ export class HarmoniumEngine {
   private async loadHarmoniumBuffer() {
     if (!this.audioCtx || this.harmoniumBuffer) return;
     try {
+      console.log(`[AudioEngine] Fetching harmonium sample from: ${this.PRIMARY_WAV_URL}`);
       const response = await fetch(this.PRIMARY_WAV_URL);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
       
       const arrayBuffer = await response.arrayBuffer();
-      
-      // Check for Git LFS pointer (starts with "version https://git-lfs")
-      const firstBytes = new Uint8Array(arrayBuffer.slice(0, 100));
-      const textPreview = new TextDecoder().decode(firstBytes);
-      if (textPreview.includes("version https://git-lfs")) {
-        throw new Error("LFS_POINTER_DETECTED: The audio file is a Git LFS pointer, not the actual audio data. Vercel cannot decode this.");
-      }
-      if (textPreview.trim().startsWith("<!DOCTYPE") || textPreview.trim().startsWith("<html")) {
-        throw new Error("HTML_DETECTED: Received an HTML page instead of audio. This is likely a 404 error or a redirect.");
+      console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for harmonium sample.`);
+
+      // Diagnostic: Check first 4 bytes for "RIFF" (WAV magic number)
+      const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
+      console.log(`[AudioEngine] File header magic: "${header}"`);
+
+      if (header !== "RIFF") {
+        const textPreview = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 200)));
+        console.warn(`[AudioEngine] Invalid WAV header detected. Content preview: ${textPreview}`);
+        
+        if (textPreview.includes("version https://git-lfs")) {
+          throw new Error("LFS_POINTER_DETECTED: The file is still a Git LFS pointer.");
+        }
+        if (textPreview.trim().startsWith("<!DOCTYPE") || textPreview.trim().startsWith("<html")) {
+          throw new Error("HTML_DETECTED: Received an HTML page (likely a 404 or Vercel error page).");
+        }
+        throw new Error(`INVALID_FORMAT: Expected RIFF header, got "${header}"`);
       }
 
       this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+      console.log(`[AudioEngine] Successfully decoded harmonium sample.`);
     } catch (e) {
-      console.error(`CRITICAL AUDIO ERROR (${this.PRIMARY_WAV_URL}):`, e);
-      if (e instanceof Error && e.message.includes("LFS_POINTER_DETECTED")) {
-        console.error("FIX: You must 'un-track' these files from Git LFS and re-add them as normal files in your repository.");
-      }
+      console.error(`[AudioEngine] CRITICAL ERROR (${this.PRIMARY_WAV_URL}):`, e);
       this.harmoniumBuffer = this.createFallbackBuffer();
     }
   }
@@ -110,17 +117,26 @@ export class HarmoniumEngine {
   private async loadReverbBuffer() {
     if (!this.audioCtx || this.reverbBuffer) return;
     try {
+      console.log(`[AudioEngine] Fetching reverb IR from: ${this.REVERB_IR_URL}`);
       const response = await fetch(this.REVERB_IR_URL);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
       const arrayBuffer = await response.arrayBuffer();
+      console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for reverb IR.`);
+      
+      const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
+      if (header !== "RIFF") {
+        console.warn(`[AudioEngine] Reverb IR has invalid header: "${header}"`);
+      }
+
       this.reverbBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       if (this.reverbNode) {
         this.reverbNode.buffer = this.reverbBuffer;
       }
+      console.log(`[AudioEngine] Successfully decoded reverb IR.`);
     } catch (e) {
-      console.error(`Failed to load reverb IR (${this.REVERB_IR_URL}):`, e);
+      console.error(`[AudioEngine] Failed to load reverb IR (${this.REVERB_IR_URL}):`, e);
     }
   }
 
