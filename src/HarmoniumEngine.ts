@@ -32,8 +32,18 @@ export class HarmoniumEngine {
   private octaveMap: number[] = [-36, -24, -12, 0, 12, 24, 36];
   private keyMap: number[] = new Array(128).fill(0);
   
-  private readonly PRIMARY_WAV_URL = import.meta.env.VITE_HARMONIUM_WAV_URL || "/harmonium-kannan-orig.wav";
-  private readonly REVERB_IR_URL = import.meta.env.VITE_REVERB_WAV_URL || "/reverb.wav";
+  private getPrimaryUrl(): string {
+    const envUrl = import.meta.env.VITE_HARMONIUM_WAV_URL;
+    console.log(`[AudioEngine] VITE_HARMONIUM_WAV_URL detected: ${envUrl ? 'YES' : 'NO (Using local fallback)'}`);
+    return envUrl || "/harmonium-kannan-orig.wav";
+  }
+
+  private getReverbUrl(): string {
+    const envUrl = import.meta.env.VITE_REVERB_WAV_URL;
+    console.log(`[AudioEngine] VITE_REVERB_WAV_URL detected: ${envUrl ? 'YES' : 'NO (Using local fallback)'}`);
+    return envUrl || "/reverb.wav";
+  }
+
   private readonly ROOT_KEY = 62; // D4
 
   constructor() {
@@ -79,64 +89,54 @@ export class HarmoniumEngine {
 
   private async loadHarmoniumBuffer() {
     if (!this.audioCtx || this.harmoniumBuffer) return;
+    const url = this.getPrimaryUrl();
     try {
-      console.log(`[AudioEngine] Fetching harmonium sample from: ${this.PRIMARY_WAV_URL}`);
-      const response = await fetch(this.PRIMARY_WAV_URL);
+      console.log(`[AudioEngine] Fetching harmonium sample from: ${url}`);
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
       
-      const arrayBuffer = await response.arrayBuffer();
+      // Use blob() then arrayBuffer() for better binary handling in some environments
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
       console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for harmonium sample.`);
 
-      // Diagnostic: Check first 4 bytes for "RIFF" (WAV magic number)
       const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
       console.log(`[AudioEngine] File header magic: "${header}"`);
 
       if (header !== "RIFF") {
-        const textPreview = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 200)));
-        console.warn(`[AudioEngine] Invalid WAV header detected. Content preview: ${textPreview}`);
-        
-        if (textPreview.includes("version https://git-lfs")) {
-          throw new Error("LFS_POINTER_DETECTED: The file is still a Git LFS pointer.");
-        }
-        if (textPreview.trim().startsWith("<!DOCTYPE") || textPreview.trim().startsWith("<html")) {
-          throw new Error("HTML_DETECTED: Received an HTML page (likely a 404 or Vercel error page).");
-        }
         throw new Error(`INVALID_FORMAT: Expected RIFF header, got "${header}"`);
       }
 
       this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       console.log(`[AudioEngine] Successfully decoded harmonium sample.`);
     } catch (e) {
-      console.error(`[AudioEngine] CRITICAL ERROR (${this.PRIMARY_WAV_URL}):`, e);
+      console.error(`[AudioEngine] CRITICAL ERROR (${url}):`, e);
       this.harmoniumBuffer = this.createFallbackBuffer();
     }
   }
 
   private async loadReverbBuffer() {
     if (!this.audioCtx || this.reverbBuffer) return;
+    const url = this.getReverbUrl();
     try {
-      console.log(`[AudioEngine] Fetching reverb IR from: ${this.REVERB_IR_URL}`);
-      const response = await fetch(this.REVERB_IR_URL);
+      console.log(`[AudioEngine] Fetching reverb IR from: ${url}`);
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
-      const arrayBuffer = await response.arrayBuffer();
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
       console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for reverb IR.`);
       
-      const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
-      if (header !== "RIFF") {
-        console.warn(`[AudioEngine] Reverb IR has invalid header: "${header}"`);
-      }
-
       this.reverbBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       if (this.reverbNode) {
         this.reverbNode.buffer = this.reverbBuffer;
       }
       console.log(`[AudioEngine] Successfully decoded reverb IR.`);
     } catch (e) {
-      console.error(`[AudioEngine] Failed to load reverb IR (${this.REVERB_IR_URL}):`, e);
+      console.error(`[AudioEngine] Failed to load reverb IR (${url}):`, e);
     }
   }
 
