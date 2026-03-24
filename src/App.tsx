@@ -9,7 +9,8 @@ import { HarmoniumModel, HarmoniumState } from './HarmoniumModel';
 import { HarmoniumController } from './HarmoniumController';
 import { generateKeyboard } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
-import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink, Edit3, FileText } from 'lucide-react';
+import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink } from 'lucide-react';
+import { NotesPlayground } from './components/NotesPlayground';
 
 const START_MIDI = 48;
 const KEY_COUNT = 37;
@@ -27,21 +28,7 @@ export default function App() {
   const [controller] = useState(() => new HarmoniumController(model, engine));
   
   const [state, setState] = useState<HarmoniumState>(model.getState());
-  const [userNotes, setUserNotes] = useState('');
   const keyboard = useMemo(() => generateKeyboard(START_MIDI, KEY_COUNT), []);
-
-  const activeSargamLetters = useMemo(() => {
-    const letters = new Set<string>();
-    state.activeMidi.forEach(midi => {
-      const info = keyboard.find(k => k.midi === midi);
-      if (info) {
-        // Map "Sa" -> "S", "Re" -> "R", etc.
-        const firstLetter = info.sargam.charAt(0).toUpperCase();
-        letters.add(firstLetter);
-      }
-    });
-    return letters;
-  }, [state.activeMidi, keyboard]);
 
   useEffect(() => {
     const unsubscribe = model.subscribe(setState);
@@ -322,114 +309,55 @@ export default function App() {
           </div>
         </div>
 
-        {/* Sargam & Notes Playground */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Sargam Display (Real-time) */}
-          <div className="lg:col-span-1 h-64 bg-zinc-900/60 backdrop-blur-md rounded-[3rem] border border-white/5 flex flex-col items-center justify-center relative overflow-hidden shadow-inner group">
-            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500">
-              <Activity size={14} className="text-orange-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Live Sargam</span>
+        {/* Display Panels */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-64">
+          {/* Live Sargam Panel */}
+          <div className="lg:col-span-1 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 p-8 flex flex-col relative overflow-hidden shadow-inner">
+            <div className="flex items-center gap-3 mb-6">
+              <Activity size={16} className="text-orange-500" />
+              <span className="text-[10px] uppercase tracking-[0.3em] font-black text-zinc-400">Live Sargam</span>
             </div>
             
-            <motion.div 
-              className="absolute inset-0 bg-orange-500/5 pointer-events-none"
-              animate={{ 
-                opacity: state.activeMidi.size > 0 ? [0.05, 0.1, 0.05] : 0.05,
-              }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-            />
-
-            <AnimatePresence mode="popLayout">
-              {state.activeMidi.size > 0 ? (
-                <div className="flex flex-wrap justify-center gap-6 px-6">
-                  {Array.from(state.activeMidi).map(midi => {
-                    const info = keyboard.find(k => k.midi === midi);
-                    return (
-                      <motion.div
-                        key={midi}
-                        initial={{ scale: 0.5, opacity: 0, filter: 'blur(10px)' }}
-                        animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                        exit={{ scale: 1.5, opacity: 0, filter: 'blur(20px)' }}
-                        className="flex flex-col items-center"
-                      >
-                        <span className="text-6xl font-serif italic text-white font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">{info?.sargam}</span>
-                        <span className="text-[10px] uppercase tracking-[0.4em] text-orange-500 font-black mt-2">{info?.name}</span>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-zinc-700 flex flex-col items-center gap-4"
-                >
-                  <div className="flex gap-2">
-                    {['S', 'R', 'G', 'M', 'P', 'D', 'N'].map(s => (
-                      <span key={s} className="text-2xl font-serif italic opacity-10">{s}</span>
-                    ))}
+            <div className="flex-1 flex flex-col items-center justify-center relative">
+              <AnimatePresence mode="popLayout">
+                {state.activeMidi.size > 0 ? (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex gap-4"
+                  >
+                    {Array.from(state.activeMidi).map(midi => {
+                      const info = keyboard.find(k => k.midi === midi);
+                      return (
+                        <span key={midi} className="text-5xl font-serif italic text-white font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                          {info?.sargam}
+                        </span>
+                      );
+                    })}
+                  </motion.div>
+                ) : (
+                  <div className="flex flex-col items-center gap-4 opacity-20">
+                    <span className="text-4xl font-serif italic text-white font-black tracking-widest">S R G M P D N S'</span>
+                    <span className="text-[9px] uppercase tracking-[0.4em] font-black text-zinc-500">PLAY KEYS TO SEE SARGAM ...</span>
                   </div>
-                  <span className="text-[9px] uppercase tracking-[0.5em] font-black opacity-40">Play keys to see sargam</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Notes Playground */}
-          <div className="lg:col-span-2 h-64 bg-zinc-900/40 backdrop-blur-md rounded-[3rem] border border-white/5 flex flex-col relative overflow-hidden group">
-            <div className="absolute top-6 left-8 flex items-center gap-2 text-zinc-500 z-20">
-              <Edit3 size={14} className="text-orange-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Notes Playground</span>
-            </div>
-            
-            <div className="absolute top-6 right-8 flex items-center gap-2 text-zinc-600 z-20">
-              <FileText size={12} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Glow enabled</span>
-            </div>
-
-            <div className="relative flex-1 overflow-hidden">
-              {/* Rendering Layer (Glow) */}
-              <div 
-                className="absolute inset-0 p-12 pt-16 text-xl md:text-2xl font-serif italic pointer-events-none whitespace-pre-wrap break-words leading-relaxed overflow-y-auto scrollbar-hide"
-                aria-hidden="true"
-              >
-                {userNotes.split('').map((char, i) => {
-                  const isActive = activeSargamLetters.has(char.toUpperCase());
-                  return (
-                    <span 
-                      key={i} 
-                      className={`transition-all duration-75 ${
-                        isActive 
-                        ? 'text-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,1)] scale-110 inline-block font-black' 
-                        : 'text-zinc-400'
-                      }`}
-                    >
-                      {char}
-                    </span>
-                  );
-                })}
-                {userNotes.length === 0 && (
-                  <span className="text-zinc-800">Example: S R G M P D N S'...</span>
                 )}
-              </div>
-
-              {/* Input Layer (Transparent) */}
-              <textarea
-                value={userNotes}
-                onChange={(e) => setUserNotes(e.target.value)}
-                className="absolute inset-0 w-full h-full bg-transparent p-12 pt-16 text-xl md:text-2xl font-serif italic text-transparent caret-orange-500 outline-none resize-none selection:bg-orange-500/20 scrollbar-hide z-10 leading-relaxed border-none focus:ring-0"
-                spellCheck={false}
-              />
+              </AnimatePresence>
             </div>
-            
-            {/* Decorative Grid */}
+
+            {/* Subtle Grid Lines */}
             <div className="absolute inset-0 opacity-[0.02] pointer-events-none">
-              <div className="grid grid-cols-12 h-full">
-                {Array.from({length: 12}).map((_, i) => (
+              <div className="grid grid-cols-6 h-full">
+                {[...Array(6)].map((_, i) => (
                   <div key={i} className="border-r border-white h-full" />
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Notes Playground Panel */}
+          <div className="lg:col-span-2 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 relative overflow-hidden shadow-inner">
+            <NotesPlayground isActive={state.activeMidi.size > 0} />
           </div>
         </div>
 
