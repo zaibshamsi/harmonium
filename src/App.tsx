@@ -11,6 +11,7 @@ import { generateKeyboard } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
 import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink } from 'lucide-react';
 import { NotesPlayground } from './components/NotesPlayground';
+import { Analytics } from "@vercel/analytics/react";
 
 const START_MIDI = 48;
 const KEY_COUNT = 37;
@@ -482,6 +483,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      <Analytics />
     </div>
   );
 }
