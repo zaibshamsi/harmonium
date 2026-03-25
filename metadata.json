@@ -1,5 +1,5 @@
 {
-  "name": "Sargam Digital Harmonium",
-  "description": "A professional-grade web-based harmonium with Sargam notation, bellows simulation, and traditional playing techniques like Meend and Gamak.",
+  "name": "Harmonium Pro",
+  "description": "Harmonium Pro: A high-fidelity digital harmonium engine for professional performance and recording.",
   "requestFramePermissions": []
 }
