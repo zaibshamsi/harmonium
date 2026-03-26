@@ -9,9 +9,12 @@ import { HarmoniumModel, HarmoniumState } from './HarmoniumModel';
 import { HarmoniumController } from './HarmoniumController';
 import { generateKeyboard } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
-import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink } from 'lucide-react';
+import { Music, Wind, Settings2, Activity, Keyboard as KeyboardIcon, Radio, Power, Github, Linkedin, Mail, ExternalLink, LogOut, User } from 'lucide-react';
 import { NotesPlayground } from './components/NotesPlayground';
+import { SongInputAI } from './components/SongInputAI';
 import { Analytics } from "@vercel/analytics/react";
+import { SongData } from './types';
+import { supabase } from './lib/supabase';
 
 const START_MIDI = 48;
 const KEY_COUNT = 37;
@@ -29,7 +32,21 @@ export default function App() {
   const [controller] = useState(() => new HarmoniumController(model, engine));
   
   const [state, setState] = useState<HarmoniumState>(model.getState());
+  const [songData, setSongData] = useState<SongData | null>(null);
+  const [user, setUser] = useState<any>(null);
   const keyboard = useMemo(() => generateKeyboard(START_MIDI, KEY_COUNT), []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = model.subscribe(setState);
@@ -132,6 +149,22 @@ export default function App() {
         </div>
         
         <div className="flex items-center gap-8">
+          {user && (
+            <div className="hidden md:flex items-center gap-4 pr-4 border-r border-white/5">
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold">Logged in as</span>
+                <span className="text-[10px] text-white font-bold truncate max-w-[150px]">{user.email}</span>
+              </div>
+              <button 
+                onClick={() => supabase.auth.signOut()}
+                className="p-2 rounded-xl bg-zinc-900 border border-white/5 text-zinc-500 hover:text-red-500 hover:border-red-500/50 transition-all group"
+                title="Logout"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          )}
+          
           <div className="hidden md:flex flex-col items-end">
             <span className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Engine Status</span>
             <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-full border border-white/5">
@@ -311,9 +344,9 @@ export default function App() {
         </div>
 
         {/* Display Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-64">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Live Sargam Panel */}
-          <div className="lg:col-span-1 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 p-8 flex flex-col relative overflow-hidden shadow-inner">
+          <div className="lg:col-span-1 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 p-8 flex flex-col relative overflow-hidden shadow-inner h-64 lg:h-auto">
             <div className="flex items-center gap-3 mb-6">
               <Activity size={16} className="text-orange-500" />
               <span className="text-[10px] uppercase tracking-[0.3em] font-black text-zinc-400">Live Sargam</span>
@@ -357,8 +390,12 @@ export default function App() {
           </div>
 
           {/* Notes Playground Panel */}
-          <div className="lg:col-span-2 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 relative overflow-hidden shadow-inner">
-            <NotesPlayground isActive={state.activeMidi.size > 0} />
+          <div className="lg:col-span-2 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 relative overflow-auto shadow-inner resize-y min-h-[16rem]">
+            <NotesPlayground 
+              isActive={state.activeMidi.size > 0} 
+              songData={songData}
+              onPlaySong={(song) => controller.playSong(song)}
+            />
           </div>
         </div>
 
@@ -420,6 +457,9 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* AI Song Input */}
+        <SongInputAI onGenerateSong={setSongData} />
       </main>
       
       {/* Footer */}

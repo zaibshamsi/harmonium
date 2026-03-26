@@ -17,6 +17,7 @@ export interface HarmoniumState {
   midiDevices: { id: string, name: string }[];
   isAudioStarted: boolean;
   audioContextState: AudioContextState;
+  isPlaying: boolean;
 }
 
 export class HarmoniumModel {
@@ -32,17 +33,29 @@ export class HarmoniumModel {
     midiDevices: [],
     isAudioStarted: false,
     audioContextState: 'suspended',
+    isPlaying: false,
   };
 
   private listeners: ((state: HarmoniumState) => void)[] = [];
 
   public getState(): HarmoniumState {
-    return { ...this.state, activeMidi: new Set(this.state.activeMidi) };
+    return this.state;
   }
 
   public updateState(patch: Partial<HarmoniumState>) {
-    this.state = { ...this.state, ...patch };
-    this.notify();
+    let hasChanged = false;
+    for (const key in patch) {
+      const k = key as keyof HarmoniumState;
+      if (this.state[k] !== patch[k]) {
+        hasChanged = true;
+        break;
+      }
+    }
+    
+    if (hasChanged) {
+      this.state = { ...this.state, ...patch };
+      this.notify();
+    }
   }
 
   public subscribe(listener: (state: HarmoniumState) => void) {
