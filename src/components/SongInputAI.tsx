@@ -48,14 +48,11 @@ export const SongInputAI: React.FC<SongInputAIProps> = ({ onGenerateSong }) => {
     }
   };
 
-  let cachedIP: string | null = null;
   const getIP = async () => {
-    if (cachedIP) return cachedIP;
     try {
       const res = await fetch('https://api.ipify.org?format=json');
       const data = await res.json();
-      cachedIP = data.ip;
-      return cachedIP;
+      return data.ip;
     } catch (err) {
       return 'unknown';
     }
@@ -64,18 +61,22 @@ export const SongInputAI: React.FC<SongInputAIProps> = ({ onGenerateSong }) => {
   const checkLimits = async (userId: string) => {
     const ip = await getIP();
     
-    const { count, error } = await supabase
+    // Check by User ID
+    const { count: userCount } = await supabase
       .from('usage_logs')
       .select('*', { count: 'exact', head: true })
-      .or(`user_id.eq.${userId},ip_address.eq.${ip}`);
+      .eq('user_id', userId);
 
-    if (error) {
-      console.error('Error checking limits:', error);
-      return { allowed: true, ip }; // Fail open if DB is slow
-    }
+    // Check by IP
+    const { count: ipCount } = await supabase
+      .from('usage_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('ip_address', ip);
 
-    const totalCount = count || 0;
-    if (totalCount >= 3) {
+    const totalUserCount = userCount || 0;
+    const totalIpCount = ipCount || 0;
+
+    if (totalUserCount >= 3 || totalIpCount >= 3) {
       return { allowed: false, ip };
     }
     return { allowed: true, ip };
@@ -118,69 +119,73 @@ export const SongInputAI: React.FC<SongInputAIProps> = ({ onGenerateSong }) => {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
       const model = "gemini-3-flash-preview";
       
-      const systemPrompt = `You are a professional Indian music transcription and performance generator.
-Your task is NOT just to output notes, but to simulate how a human singer would perform the song on a harmonium.
-You must generate expressive musical data in JSON format that includes timing, dynamics, and pitch movement.
-
-STRICT RULES:
-1. Use Sargam-based understanding (Sa Re Ga Ma) and map it correctly to notes.
-2. SEARCH FIRST: Use Google Search to find the actual Sargam notations for the requested song.
-3. Do NOT quantize timing. Use natural musical phrasing (e.g., start: 0.02 instead of 0.0).
-4. Add expressive elements:
-   - pitchCurve (Meend): Use for slides between notes. Keep 'v' (semitone offset) within -2.0 to +2.0.
-   - vibrato: Only for long notes (>0.5 duration). Keep 'depth' within 0.05 to 0.2 (subtle).
-   - velocity: Use 0.6 for soft notes, 0.9 for emphasized notes.
-5. Legato: Allow notes to overlap slightly (e.g., Note A ends at 1.05 while Note B starts at 1.0) for a smooth feel.
-6. Avoid robotic spacing. Human singers often start slightly late or early.
-7. Return exactly 4-6 lines of the song.
-
+      const systemPrompt = `You are a music theory expert specializing in Indian classical music and harmonium. 
+You receive song lyrics (possibly with a song name/Bollywood title hint) and must output the melody note sequence for those lyrics mapped to harmonium keys.
+ 
 The harmonium keyboard layout is:
 White keys: \` q w e r t y u i o p [ ] \\
 Black keys: 1 2 4 5 7 8 9 - =
  
 Full mapping (key → Sargam → Western):
-\`=Sa, 1=re, q=Re, 2=ga, w=Ga, e=Ma, 4=ma, r=Pa, 5=dha, t=Dha, 7=ni, y=Ni
-u=Sa', 8=re', i=Re', 9=ga', o=Ga', p=Ma', -=ma', [=Pa', ==dha', ]=Dha', \\=ni'
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object:
+\` = Sa = C
+1 = Komal Re = C#
+q = Re = D
+2 = Komal Ga = D#
+w = Ga = E
+e = Ma = F
+4 = Tivra Ma = F#
+r = Pa = G
+5 = Komal Dha = G#
+t = Dha = A
+7 = Komal Ni = A#
+y = Ni = B
+u = Sa' (upper) = C'
+8 = Komal Re' = C#'
+i = Re' = D'
+9 = Komal Ga' = D#'
+o = Ga' = E'
+p = Ma' = F'
+- = Tivra Ma' = F#'
+[ = Pa' = G'
+= = Komal Dha' = G#'
+] = Dha' = A'
+\\ = Ni' = B'
+ 
+TASK: Analyze the lyrics and return ONLY a valid JSON object (no markdown, no explanation) with this exact structure:
+ 
 {
-  "song": "Official Title",
-  "raga": "Specific Raga or Scale",
+  "song": "Song name if identifiable, else 'Custom Song'",
+  "raga": "Raga name or scale (e.g. Yaman, Bhairavi, Kafi, or 'Major scale')",
   "tempo": "Slow | Medium | Fast",
   "difficulty": "Beginner | Intermediate | Advanced",
-  "tip": "Specific technique tip",
+  "tip": "One short playing tip (max 12 words)",
   "lines": [
     {
-      "lyric": "Lyric phrase",
+      "lyric": "exact lyric phrase",
       "notes": [
-        {
-          "key": "char",
-          "sargam": "name",
-          "syllable": "text",
-          "start": float, // Absolute start time in beats
-          "duration": float, // Duration in beats
-          "velocity": float, // 0.5-1.0
-          "expression": {
-            "pitchCurve": [{ "t": float, "v": float }], // t: 0-1 (relative to duration), v: semitone offset
-            "vibrato": { "enabled": bool, "rate": float, "depth": float },
-            "attack": float,
-            "release": float
-          }
-        }
+        { "key": "keyboard key character", "sargam": "sargam name", "syllable": "syllable this note goes on", "duration": 1.0 }
       ]
     }
   ]
 }
-Return ONLY raw JSON. Max 6 lines.`;
+ 
+Rules:
+- Map each syllable of the lyrics to the most musically appropriate key
+- Assign a "duration" to each note (0.5 = short/half beat, 1.0 = normal beat, 2.0 = long/held note). Use these to capture the natural rhythm of the song.
+- Start from a comfortable octave (lower octave preferred for beginners)
+- For well-known Bollywood/film songs, use the actual melody — you likely know it
+- For unknown songs, infer a pleasing melody that fits the mood of the lyrics
+- Keep lines short (one lyric line per object)
+- Maximum 6 lines total
+- Each line max 10 notes
+- Return ONLY the raw JSON, nothing else`;
 
       const response = await ai.models.generateContent({
         model,
-        contents: `Generate expressive harmonium playback data for the song: "${songTitle}"`,
+        contents: `Song/Lyrics: ${songTitle}`,
         config: {
           systemInstruction: systemPrompt,
           responseMimeType: "application/json",
-          tools: [{ googleSearch: {} }],
           responseSchema: {
             type: Type.OBJECT,
             properties: {
@@ -203,34 +208,10 @@ Return ONLY raw JSON. Max 6 lines.`;
                           key: { type: Type.STRING },
                           sargam: { type: Type.STRING },
                           syllable: { type: Type.STRING },
-                          start: { type: Type.NUMBER },
-                          duration: { type: Type.NUMBER },
-                          velocity: { type: Type.NUMBER },
-                          expression: {
-                            type: Type.OBJECT,
-                            properties: {
-                              pitchCurve: {
-                                type: Type.ARRAY,
-                                items: {
-                                  type: Type.OBJECT,
-                                  properties: {
-                                    t: { type: Type.NUMBER },
-                                    v: { type: Type.NUMBER }
-                                  }
-                                }
-                              },
-                              vibrato: {
-                                type: Type.OBJECT,
-                                properties: {
-                                  enabled: { type: Type.BOOLEAN },
-                                  rate: { type: Type.NUMBER },
-                                  depth: { type: Type.NUMBER }
-                                }
-                              },
-                              attack: { type: Type.NUMBER },
-                              release: { type: Type.NUMBER }
-                            }
-                          }
+                          duration: { 
+                            type: Type.NUMBER,
+                            description: "Relative duration of the note (0.5 for short, 1.0 for normal, 2.0 for long)."
+                          },
                         },
                         required: ["key", "sargam", "syllable", "duration"],
                       },
@@ -246,12 +227,6 @@ Return ONLY raw JSON. Max 6 lines.`;
       });
 
       const data = JSON.parse(response.text || '{}') as SongData;
-      console.log('[AI] Received Song Data:', data);
-      
-      const allNotes = data.lines.flatMap(l => l.notes);
-      const hasV2 = allNotes.some(n => n.start !== undefined || n.expression !== undefined);
-      console.log(`[AI] Expressive Data (V2) Detected: ${hasV2 ? 'YES ✅' : 'NO ❌'}`);
-
       if (data.lines && data.lines.length > 0) {
         // 3. Log usage
         await supabase.from('usage_logs').insert({

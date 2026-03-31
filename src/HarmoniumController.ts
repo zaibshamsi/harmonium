@@ -15,7 +15,6 @@ export class HarmoniumController {
   private keyboard: NoteInfo[];
   private rafId: number | null = null;
   private isPlaying = false;
-  private activeTimeouts: Set<NodeJS.Timeout> = new Set();
 
   constructor(model: HarmoniumModel, engine: HarmoniumEngine) {
     this.model = model;
@@ -28,14 +27,6 @@ export class HarmoniumController {
     
     // Sync initial engine settings with model
     this.syncEngineWithModel();
-  }
-
-  public stopSong() {
-    this.isPlaying = false;
-    this.model.updateState({ isPlaying: false });
-    this.activeTimeouts.forEach(t => clearTimeout(t));
-    this.activeTimeouts.clear();
-    this.stopAll();
   }
 
   private syncEngineWithModel() {
@@ -117,13 +108,13 @@ export class HarmoniumController {
     if (note) this.noteOff(note.midi);
   }
 
-  public async noteOn(midi: number, velocity: number = 100, expression?: any) {
-    await this.engine.noteOn(midi, velocity, expression);
+  public async noteOn(midi: number, velocity: number = 100) {
+    await this.engine.noteOn(midi, velocity);
     this.model.addNote(midi);
   }
 
-  public noteOff(midi: number, expression?: any) {
-    this.engine.noteOff(midi, expression);
+  public noteOff(midi: number) {
+    this.engine.noteOff(midi);
     this.model.removeNote(midi);
   }
 
@@ -160,90 +151,31 @@ export class HarmoniumController {
   public async playSong(song: SongData) {
     if (this.isPlaying) return;
     this.isPlaying = true;
-    this.model.updateState({ isPlaying: true });
 
     const tempoMap = {
-      'Slow': 1200, // ms per beat
-      'Medium': 800,
-      'Fast': 500
+      'Slow': 600,
+      'Medium': 400,
+      'Fast': 250
     };
-    const beatDurationMs = tempoMap[song.tempo as keyof typeof tempoMap] || 800;
-    const beatDurationSec = beatDurationMs / 1000;
+    const delay = tempoMap[song.tempo as keyof typeof tempoMap] || 500;
 
-    const allNotes = song.lines.flatMap(line => line.notes);
-    const isV2 = allNotes.some(n => n.start !== undefined);
-
-    if (isV2) {
-      console.log('[Sequencer] Starting V2.1: Sample-Accurate Scheduling 🚀');
-      
-      // Get the audio context time as the base
-      // We add a small buffer (100ms) to ensure everything is scheduled before it needs to play
-      const audioCtx = (this.engine as any).audioCtx;
-      if (!audioCtx) {
-        await (this.engine as any).initAudio();
-      }
-      const baseTime = (this.engine as any).audioCtx.currentTime + 0.1;
-
-      for (const note of allNotes) {
+    for (const line of song.lines) {
+      for (const note of line.notes) {
         if (!note.key) continue;
         const keyInfo = this.keyboard.find(n => n.key === note.key.toLowerCase());
-        if (!keyInfo) continue;
-
-        const startTime = baseTime + (note.start || 0) * beatDurationSec;
-        const duration = (note.duration || 1) * beatDurationSec;
-        const velocity = (note.velocity || 0.8) * 127;
-        const expression = { ...note.expression, duration };
-
-        // Schedule AUDIO (Sample Accurate)
-        this.engine.noteOn(keyInfo.midi, velocity, expression, startTime);
-        this.engine.noteOff(keyInfo.midi, expression, startTime + duration);
-
-        // Schedule UI (Visual Feedback)
-        // We use setTimeout for UI because it doesn't need to be sample-accurate
-        const uiDelay = (startTime - (this.engine as any).audioCtx.currentTime) * 1000;
-        const uiDuration = duration * 1000;
-
-        const startTimeout = setTimeout(() => {
-          if (this.isPlaying) {
-            this.model.addNote(keyInfo.midi);
-            const endTimeout = setTimeout(() => {
-              this.model.removeNote(keyInfo.midi);
-              this.activeTimeouts.delete(endTimeout);
-            }, uiDuration);
-            this.activeTimeouts.add(endTimeout);
-          }
-          this.activeTimeouts.delete(startTimeout);
-        }, uiDelay);
-        this.activeTimeouts.add(startTimeout);
-      }
-
-      // Wait for the song to finish to reset isPlaying
-      const lastNote = allNotes.reduce((prev, curr) => 
-        ((curr.start || 0) + (curr.duration || 0)) > ((prev.start || 0) + (prev.duration || 0)) ? curr : prev
-      );
-      const totalDurationSec = ((lastNote.start || 0) + (lastNote.duration || 0)) * beatDurationSec + 0.5;
-      await new Promise(resolve => setTimeout(resolve, totalDurationSec * 1000));
-
-    } else {
-      console.log('[Sequencer] Starting V1: Sequential Playback (Legacy Mode) 🎹');
-      for (const line of song.lines) {
-        for (const note of line.notes) {
-          if (!note.key) continue;
-          const keyInfo = this.keyboard.find(n => n.key === note.key.toLowerCase());
-          if (keyInfo) {
-            const noteDuration = (note.duration || 1) * (beatDurationMs / 2);
-            await this.noteOn(keyInfo.midi);
-            await new Promise(resolve => setTimeout(resolve, noteDuration * 0.85));
-            this.noteOff(keyInfo.midi);
-            await new Promise(resolve => setTimeout(resolve, noteDuration * 0.15));
-          }
+        if (keyInfo) {
+          const noteDuration = (note.duration || 1) * delay;
+          await this.noteOn(keyInfo.midi);
+          await new Promise(resolve => setTimeout(resolve, noteDuration * 0.85));
+          this.noteOff(keyInfo.midi);
+          await new Promise(resolve => setTimeout(resolve, noteDuration * 0.15));
         }
-        await new Promise(resolve => setTimeout(resolve, beatDurationMs * 0.25));
       }
+      // Extra pause between lines
+      await new Promise(resolve => setTimeout(resolve, delay * 0.5));
     }
-    
+
     this.isPlaying = false;
-    this.model.updateState({ isPlaying: false });
   }
 
   public dispose() {

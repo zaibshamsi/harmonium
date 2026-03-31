@@ -16,11 +16,6 @@ export class HarmoniumEngine {
   private harmoniumBuffer: AudioBuffer | null = null;
   private reverbBuffer: AudioBuffer | null = null;
   
-  private harmoniumArrayBuffer: ArrayBuffer | null = null;
-  private reverbArrayBuffer: ArrayBuffer | null = null;
-  private isPreloading: boolean = false;
-  private preloadPromise: Promise<void> | null = null;
-  
   // Voice pool: one source node per MIDI note slot
   private sourceNodes: (AudioBufferSourceNode | null)[] = new Array(128).fill(null);
   private sourceGains: (GainNode | null)[] = new Array(128).fill(null);
@@ -49,36 +44,6 @@ export class HarmoniumEngine {
 
   constructor() {
     this.buildKeyMap();
-  }
-
-  public preload(): Promise<void> {
-    if (this.preloadPromise) return this.preloadPromise;
-    this.isPreloading = true;
-    this.preloadPromise = (async () => {
-      try {
-        const [hRes, rRes] = await Promise.all([
-          fetch(this.getPrimaryUrl()),
-          fetch(this.getReverbUrl())
-        ]);
-        
-        const [hBlob, rBlob] = await Promise.all([
-          hRes.blob(),
-          rRes.blob()
-        ]);
-        
-        [this.harmoniumArrayBuffer, this.reverbArrayBuffer] = await Promise.all([
-          hBlob.arrayBuffer(),
-          rBlob.arrayBuffer()
-        ]);
-        
-        console.log('[AudioEngine] Preload complete.');
-      } catch (e) {
-        console.error('[AudioEngine] Preload failed:', e);
-      } finally {
-        this.isPreloading = false;
-      }
-    })();
-    return this.preloadPromise;
   }
 
   private buildKeyMap() {
@@ -112,8 +77,6 @@ export class HarmoniumEngine {
       this.masterGain.connect(this.reverbNode);
     }
 
-    if (this.preloadPromise) await this.preloadPromise;
-
     await Promise.all([
       this.loadHarmoniumBuffer(),
       this.loadReverbBuffer()
@@ -122,45 +85,62 @@ export class HarmoniumEngine {
 
   private async loadHarmoniumBuffer() {
     if (!this.audioCtx || this.harmoniumBuffer) return;
-    
+    const url = this.getPrimaryUrl();
     try {
-      let arrayBuffer = this.harmoniumArrayBuffer;
-      if (!arrayBuffer) {
-        const url = this.getPrimaryUrl();
-        console.log(`[AudioEngine] Fetching harmonium sample from: ${url}`);
-        const response = await fetch(url);
-        const blob = await response.blob();
-        arrayBuffer = await blob.arrayBuffer();
+      console.log(`[AudioEngine] Fetching harmonium sample from: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
       
-      this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer.slice(0)); // Slice to avoid detached buffer issues
+      // Use blob() then arrayBuffer() for better binary handling in some environments
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for harmonium sample.`);
+
+      const header = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 4)));
+      const format = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(8, 12)));
+      console.log(`[AudioEngine] File header magic: "${header}", format: "${format}"`);
+
+      if (header !== "RIFF" || format !== "WAVE") {
+        const textPreview = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, 200)));
+        console.warn(`[AudioEngine] Invalid WAV header or format. Header: "${header}", Format: "${format}"`);
+        console.warn(`[AudioEngine] Content preview: ${textPreview}`);
+        
+        if (textPreview.includes("version https://git-lfs")) {
+          throw new Error("LFS_POINTER_DETECTED: The file is still a Git LFS pointer.");
+        }
+        throw new Error(`INVALID_FORMAT: Expected RIFF/WAVE, got "${header}/${format}"`);
+      }
+
+      this.harmoniumBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       console.log(`[AudioEngine] Successfully decoded harmonium sample.`);
     } catch (e) {
-      console.error(`[AudioEngine] CRITICAL ERROR:`, e);
+      console.error(`[AudioEngine] CRITICAL ERROR (${url}):`, e);
       this.harmoniumBuffer = this.createFallbackBuffer();
     }
   }
 
   private async loadReverbBuffer() {
     if (!this.audioCtx || this.reverbBuffer) return;
-    
+    const url = this.getReverbUrl();
     try {
-      let arrayBuffer = this.reverbArrayBuffer;
-      if (!arrayBuffer) {
-        const url = this.getReverbUrl();
-        console.log(`[AudioEngine] Fetching reverb IR from: ${url}`);
-        const response = await fetch(url);
-        const blob = await response.blob();
-        arrayBuffer = await blob.arrayBuffer();
+      console.log(`[AudioEngine] Fetching reverb IR from: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
       }
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      console.log(`[AudioEngine] Received ${arrayBuffer.byteLength} bytes for reverb IR.`);
       
-      this.reverbBuffer = await this.audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      this.reverbBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       if (this.reverbNode) {
         this.reverbNode.buffer = this.reverbBuffer;
       }
       console.log(`[AudioEngine] Successfully decoded reverb IR.`);
     } catch (e) {
-      console.error(`[AudioEngine] Failed to load reverb IR:`, e);
+      console.error(`[AudioEngine] Failed to load reverb IR (${url}):`, e);
     }
   }
 
@@ -176,32 +156,32 @@ export class HarmoniumEngine {
     return buffer;
   }
 
-  public async noteOn(midi: number, velocity: number = 100, expression?: any, startTime?: number) {
+  public async noteOn(midi: number, velocity: number = 100) {
     await this.initAudio();
     if (!this.audioCtx || !this.harmoniumBuffer || !this.masterGain) return;
 
-    const time = startTime ?? this.audioCtx.currentTime;
+    const now = this.audioCtx.currentTime;
     
     // Main note
-    this.playVoice(midi, midi, time, velocity, false, expression);
+    this.playVoice(midi, midi, now, velocity);
 
-    // Additional reeds
+    // Additional reeds (higher octaves)
     for (let r = 1; r <= this.additionalReeds; r++) {
       const reedMidi = midi + (r * 12);
       if (reedMidi < 128) {
-        this.playVoice(midi, reedMidi, time, velocity, true, expression);
+        this.playVoice(midi, reedMidi, now, velocity, true);
       }
     }
   }
 
-  private playVoice(triggerMidi: number, targetMidi: number, time: number, velocity: number, isAdditional: boolean = false, expression?: any) {
+  private playVoice(triggerMidi: number, targetMidi: number, time: number, velocity: number, isAdditional: boolean = false) {
     if (!this.audioCtx || !this.harmoniumBuffer || !this.masterGain) return;
 
     const finalMidi = targetMidi + this.octaveMap[this.currentOctave];
     if (finalMidi < 0 || finalMidi >= 128) return;
 
-    // Stop existing node at this slot if any
-    this.stopNode(finalMidi, 0.005, time);
+    // Stop existing node at this slot if any (re-triggering same reed)
+    this.stopNode(finalMidi);
 
     const src = this.audioCtx.createBufferSource();
     src.buffer = this.harmoniumBuffer;
@@ -210,89 +190,51 @@ export class HarmoniumEngine {
     src.loopEnd = 7.5;
     
     // Pitch shifting
-    const baseDetune = this.keyMap[finalMidi] * 100;
-    src.detune.setValueAtTime(baseDetune, time);
-
-    // Pitch Curve Automation (Meend)
-    if (expression?.pitchCurve && expression.pitchCurve.length > 0) {
-      const duration = expression.duration || 1.0;
-      // Ensure we start at the base pitch
-      src.detune.setValueAtTime(baseDetune, time);
-      
-      expression.pitchCurve.forEach((point: any) => {
-        const pointTime = time + (point.t * duration);
-        const pointDetune = baseDetune + (point.v * 100);
-        // Use exponentialRamp for more natural pitch movement if possible, 
-        // but linear is safer for small offsets
-        src.detune.linearRampToValueAtTime(pointDetune, pointTime);
-      });
-    }
-
-    // Vibrato LFO
-    if (expression?.vibrato?.enabled) {
-      const lfo = this.audioCtx.createOscillator();
-      lfo.frequency.setValueAtTime(expression.vibrato.rate || 5, time);
-      
-      const vibratoGain = this.audioCtx.createGain();
-      vibratoGain.gain.setValueAtTime(expression.vibrato.depth * 50 || 5, time);
-      
-      lfo.connect(vibratoGain);
-      vibratoGain.connect(src.detune);
-      lfo.start(time);
-      
-      // Stop LFO when note ends (approximate)
-      if (expression.duration) {
-        lfo.stop(time + expression.duration + (expression.release || 0.1));
-      }
-    }
+    const detuneValue = this.keyMap[finalMidi] * 100;
+    src.detune.value = detuneValue;
 
     const voiceGain = this.audioCtx.createGain();
-    const velFactor = velocity / 127;
-    const velGain = this.velocityEnabled ? velFactor : 1.0;
+    const velGain = this.velocityEnabled ? (velocity / 127) : 1.0;
     
-    // Envelope Control
-    const attack = expression?.attack || 0.01;
+    // Use a tiny attack ramp (5ms) to prevent chirps/clicks at note start
     voiceGain.gain.setValueAtTime(0, time);
-    voiceGain.gain.linearRampToValueAtTime(velGain, time + attack);
+    voiceGain.gain.linearRampToValueAtTime(velGain, time + 0.005);
     
     src.connect(voiceGain);
     voiceGain.connect(this.masterGain);
 
     src.start(time);
 
-    // Track nodes for stopping
     this.sourceNodes[finalMidi] = src;
     this.sourceGains[finalMidi] = voiceGain;
   }
 
-  public noteOff(midi: number, expression?: any, stopTime?: number) {
+  public noteOff(midi: number) {
     const baseIndex = midi + this.octaveMap[this.currentOctave];
-    const time = stopTime ?? (this.audioCtx?.currentTime || 0);
-    
-    this.stopNode(baseIndex, expression?.release, time);
+    this.stopNode(baseIndex);
     
     for (let r = 1; r <= this.additionalReeds; r++) {
       const reedIndex = baseIndex + (r * 12);
-      this.stopNode(reedIndex, expression?.release, time);
+      this.stopNode(reedIndex);
     }
   }
 
-  private stopNode(index: number, releaseTime?: number, time?: number) {
+  private stopNode(index: number) {
     if (!this.audioCtx || index < 0 || index >= 128) return;
-    const now = time ?? this.audioCtx.currentTime;
+    const now = this.audioCtx.currentTime;
 
     const node = this.sourceNodes[index];
     const gain = this.sourceGains[index];
 
     if (gain && node) {
       try {
-        const release = releaseTime || 0.01;
+        // Use a 5ms micro-fade to prevent digital clicks while remaining "instant"
         gain.gain.cancelScheduledValues(now);
         gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(0, now + release);
-        node.stop(now + release + 0.01);
+        gain.gain.linearRampToValueAtTime(0, now + 0.005);
+        node.stop(now + 0.005);
       } catch (e) {
-        // Already stopped
+        // Already stopped or not started
       }
     }
 

@@ -344,9 +344,9 @@ export default function App() {
         </div>
 
         {/* Display Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-64">
           {/* Live Sargam Panel */}
-          <div className="lg:col-span-1 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 p-8 flex flex-col relative overflow-hidden shadow-inner h-64 lg:h-auto">
+          <div className="lg:col-span-1 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 p-8 flex flex-col relative overflow-hidden shadow-inner">
             <div className="flex items-center gap-3 mb-6">
               <Activity size={16} className="text-orange-500" />
               <span className="text-[10px] uppercase tracking-[0.3em] font-black text-zinc-400">Live Sargam</span>
@@ -390,7 +390,7 @@ export default function App() {
           </div>
 
           {/* Notes Playground Panel */}
-          <div className="lg:col-span-2 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 relative overflow-auto shadow-inner resize-y min-h-[16rem]">
+          <div className="lg:col-span-2 bg-zinc-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/5 relative overflow-hidden shadow-inner">
             <NotesPlayground 
               isActive={state.activeMidi.size > 0} 
               songData={songData}
